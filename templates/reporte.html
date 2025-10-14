@@ -1,0 +1,91 @@
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Informe de RCP</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; margin: 24px; color:#222; }
+    h1,h2,h3 { margin: .4em 0; }
+    h1 { font-size: 1.8rem; }
+    h2 { font-size: 1.3rem; margin-top: 1.2rem; }
+    .card { background:#fafafa; border:1px solid #eee; border-radius:10px; padding:1rem; margin:1rem 0; }
+    table { width:100%; border-collapse: collapse; margin-top:.6rem; }
+    th,td { text-align:left; padding:8px; border-bottom:1px solid #eee; }
+    .good { color:#0a6; font-weight:bold; }
+    .bad  { color:#b00; font-weight:bold; }
+    .muted{ color:#666; }
+  </style>
+</head>
+<body>
+  <h1>Informe de RCP </h1>
+
+  {% if error %}
+    <div class="card"><p class="bad">Error: {{ error }}</p></div>
+  {% elif not metrics %}
+    <div class="card"><p class="muted">No hay métricas para mostrar.</p></div>
+  {% else %}
+    {% set s = metrics.session %}
+    {% set q = metrics.cpr_quality %}
+    {% set rbpm = q.rate_bpm %}
+    <div class="card">
+      <h2>Resumen ejecutivo</h2>
+      <p>Duración analizada: <b>{{ '%.1f'|format(s.duration_s) }} s</b>
+         · Muestras: <b>{{ s.samples }}</b>
+         · Objetivo adulto: <b>100–120 cpm</b>
+         · Compression Fraction: objetivo <b>&gt; 60%</b></p>
+      <p>Frec. media: <b>{{ rbpm.median if rbpm.median is not none else 'N/D' }}</b> cpm
+         · % en 100–120: <b>{{ '%.1f'|format(rbpm.in_target_pct_100_120) }}%</b>
+         · Hands-off: <b>{{ '%.1f'|format(q.hands_off_time_s) }} s</b>
+         · CF: 
+         {% set cf = q.compression_fraction_pct %}
+         {% if cf is not none and cf >= 60 %}<span class="good"><b>{{ '%.1f'|format(cf) }}%</b></span>
+         {% elif cf is not none %}<span class="bad"><b>{{ '%.1f'|format(cf) }}%</b></span>
+         {% else %}N/D{% endif %}
+      </p>
+      <p class="muted">Nota: se excluyeron los primeros 9 s (CPM no acumulado).</p>
+    </div>
+
+    <div class="card">
+      <h2>Métricas de frecuencia</h2>
+      <table>
+        <tr><td>Media (cpm)</td><td>{{ rbpm.mean if rbpm.mean is not none else 'N/D' }}</td></tr>
+        <tr><td>Mediana (cpm)</td><td>{{ rbpm.median if rbpm.median is not none else 'N/D' }}</td></tr>
+        <tr><td>Desvío (cpm)</td><td>{{ rbpm.std if rbpm.std is not none else 'N/D' }}</td></tr>
+        <tr><td>% dentro de 100–120</td><td>{{ '%.1f'|format(rbpm.in_target_pct_100_120) }}%</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Pausas (≥ {{ q.pauses_over_threshold_s.threshold_s }} s)</h2>
+      {% set pauses = q.pauses_over_threshold_s.top3_by_duration %}
+      {% if pauses and pauses|length > 0 %}
+        <table>
+          <thead><tr><th>Inicio–Fin (s)</th><th>Duración (s)</th></tr></thead>
+          <tbody>
+            {% for p in pauses %}
+              <tr><td>{{ '%.1f'|format(p.start_s) }}–{{ '%.1f'|format(p.end_s) }}</td><td>{{ '%.1f'|format(p.duration_s) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="muted">Total pausas: {{ q.pauses_over_threshold_s.count }}</p>
+      {% else %}
+        <p class="muted">Sin pausas prolongadas.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Alarmas</h2>
+      {% set a = metrics.alarms.sustained_high_rate %}
+      {% if a.segments and a.segments|length > 0 %}
+        <p>Frecuencia sostenida &gt; {{ a.threshold_cpm }} cpm por ≥ {{ a.min_duration_s }} s</p>
+        <ul>
+          {% for seg in a.segments %}
+            <li>{{ '%.1f'|format(seg.start_s) }}–{{ '%.1f'|format(seg.end_s) }} ({{ '%.1f'|format(seg.duration_s) }} s)</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">Sin segmentos de alta sostenida.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+</body>
+</html>
