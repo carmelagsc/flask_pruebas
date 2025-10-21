@@ -2,12 +2,12 @@ from flask import Flask, request, render_template, jsonify, send_file
 import csv
 import os
 import io
-import filtro as ft
+import filtro3 as ft
 import pandas as pd
 from datetime import datetime, timezone
 import time
 
-from filtro import stats_bp
+from filtro3 import stats_bp
 from cpr_metrics import compute_metrics_from_cpm  
 import json
 
@@ -36,19 +36,19 @@ def start():
     datos_z = []
     guardando = True
     comentario_actual = request.json.get("comentario", "").strip()
+
+    # ⬇️ Reiniciar estados del filtro/streaming/calibración
+    try:
+        ft.reset_stream()
+    except Exception:
+        pass
+
     # Reiniciar CSV con encabezados
     with open(archivo_csv, mode='w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm"])
 
     return "Guardado iniciado"
-
-"""@app.route("/stop")
-def stop():
-    global guardando
-    guardando = False
-    return "Guardado detenido"
-    """
 
 @app.route("/stop", methods=["POST"])
 def stop_recording():
@@ -61,7 +61,6 @@ def stop_recording():
             pause_threshold_s=10.0,
             sustained_high_thr=130.0,
             sustained_high_min_s=10.0,
-            
         )
 
         return jsonify({"ok": True, "samples": results["session"]["samples"]})
@@ -74,43 +73,7 @@ def datos_json():
         "valores": datos_z,
         "indices": list(range(len(datos_z)))
     })
-"""
-# ¡OJO! Evitar el decorador duplicado de /esp32
-@app.route("/esp32", methods=["POST"])
-def recibir_datos():
-    global datos_z, guardando, comentario_actual
 
-    contenido = request.data.decode("utf-8").strip()
-    try:
-        nuevas_medidas = [float(linea) for linea in contenido.splitlines() if linea]
-    except ValueError:
-        return "CPM:0,PROF:0.0"
-
-    datos_z.extend(nuevas_medidas)
-
-    # Guardado opcional a CSV
-    if guardando:
-        import csv
-        with open(archivo_csv, mode='a', newline='') as f:
-            writer = csv.writer(f)
-            start_index = len(datos_z) - len(nuevas_medidas)
-            for i, valor in enumerate(nuevas_medidas):
-                writer.writerow([start_index + i, valor, comentario_actual])
-
-    # Limitar memoria (últimos 10 s como mínimo: 1000 muestras). Podés dejar 2000.
-    if len(datos_z) > 2000:
-        datos_z = datos_z[-2000:]
-
-    # === NUEVO: calcular métricas acumuladas con tu filtro mejorado ===
-    try:
-        n_comp, cpm, prof_cm = ft.compute_counts_depth(datos_z)
-    except Exception as e:
-        # ante cualquier error del filtro, no rompas el protocolo
-        n_comp, cpm, prof_cm = 0, 0.0, 0.0
-
-    # Responder en el formato que espera la ESP32
-    return f"CPM:{int(round(cpm))},PROF:{prof_cm:.1f}"
-"""
 @app.route("/esp32", methods=["POST"])
 def recibir_datos():
     global datos_z, guardando, comentario_actual
@@ -125,28 +88,32 @@ def recibir_datos():
     start_index = len(datos_z)
     datos_z.extend(nuevas_medidas)
 
-    # === calcular métricas acumuladas con tu filtro ===
+    # 2) ⬇️ Procesar SOLO este lote con el filtro causal (estado interno + calibración 5 cm)
     try:
-        n_comp, cpm, prof_cm = ft.compute_counts_depth(datos_z)
+        m = ft.update_stream(nuevas_medidas)
+        n_comp = m["n_comp"]
+        cpm    = m["cpm"]
+        prof_cm = m["depth_cm"]        # ¡Ojo! ahora es relativo al baseline=5 cm
+        # Extras disponibles si querés: m["pct_target"], m["hit_5cm"], m["calibrated"],
+        #                               m["no_rcp_active"], m["no_rcp_time_s"]
     except Exception:
         n_comp, cpm, prof_cm = 0, 0.0, 0.0
 
-
+    # 3) Guardado opcional a CSV (con timestamp y cpm)
     if guardando:
-        # tomamos fs del módulo de filtro (en tu filtro fs=100)
-        fs = getattr(ft, "fs", 100)
+        fs_local = getattr(ft, "fs", 100)
         with open(archivo_csv, mode='a', newline='') as f:
             writer = csv.writer(f)
             for i, valor in enumerate(nuevas_medidas):
                 indice = start_index + i
-                timestamp_s = indice / fs
+                timestamp_s = indice / fs_local
                 writer.writerow([indice, f"{timestamp_s:.2f}", valor, f"{cpm:.1f}"])
 
-    # Limitar memoria
+    # 4) Limitar memoria RAM
     if len(datos_z) > 2000:
         datos_z = datos_z[-2000:]
 
-    # Responder a la ESP32
+    # 5) Responder a la ESP32 (protocolo intacto)
     return f"CPM:{int(round(cpm))},PROF:{prof_cm:.1f}"
 
 
@@ -177,14 +144,27 @@ def descargar_csv():
         download_name="datos_pruebas_profundidad.csv"
     )
 
+@app.route("/cal_status")
+def cal_status():
+    try:
+        m = ft.get_last_metrics()
+        return jsonify({
+            "calibrated": m.get("calibrated", False),
+            "pct_target": m.get("pct_target", 0.0),     # 100% == 5 cm
+            "hit_5cm":    m.get("hit_5cm", False),
+            "depth_cm_rel": m.get("depth_cm", 0.0),     # relativo al baseline
+            "no_rcp_active": m.get("no_rcp_active", False),
+            "no_rcp_time_s": round(m.get("no_rcp_time_s", 0.0), 1),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/stats')
 def stats():
     arr = datos_z
-    print(f"[DEBUG stats] len(datos_z) = {len(arr)}, últimos 5 = {arr[-5:]}")
-    n_comp, cpm = ft.compute_counts(arr)
-    print(f"[DEBUG stats] detectados = {n_comp}, cpm = {cpm}")
-    return jsonify({'n_comp': n_comp, 'cpm': cpm})
-
+    m = ft.get_last_metrics()   # ya está procesando en /esp32
+    return jsonify({'n_comp': m["n_comp"], 'cpm': m["cpm"]})
 
 
 @app.route("/metrics")
