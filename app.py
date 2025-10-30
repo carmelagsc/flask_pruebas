@@ -23,7 +23,7 @@ comentario_actual = ""
 if not os.path.exists(archivo_csv):
     with open(archivo_csv, mode='w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm"])
+        writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm", "prof_cm"])
 
 @app.route("/")
 def mostrar_grafico():
@@ -46,7 +46,7 @@ def start():
     # Reiniciar CSV con encabezados
     with open(archivo_csv, mode='w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm"])
+        writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm", "prof_cm"])
 
     return "Guardado iniciado"
 
@@ -56,12 +56,12 @@ def stop_recording():
     guardando = False  # 1) frena la captura
 
     try:
-        results = compute_metrics_from_cpm(
-            df = pd.read_csv( archivo_csv, encoding="latin1"),
-            pause_threshold_s=10.0,
-            sustained_high_thr=130.0,
-            sustained_high_min_s=10.0,
-        )
+        results = compute_metrics_from_cpm( df = pd.read_csv( archivo_csv, encoding="latin1"), pause_threshold_s=10.0,
+                                           sustained_high_thr=130.0,
+                                           sustained_high_min_s=10.0, depth_low_cm = 5.0,
+                                           depth_high_cm = 6.0,
+                                           depth_alarm_low_cm = 4.5,
+                                           depth_alarm_min_s= 10.0,)
 
         return jsonify({"ok": True, "samples": results["session"]["samples"]})
     except Exception as e:
@@ -108,6 +108,7 @@ def recibir_datos():
                 indice = start_index + i
                 timestamp_s = indice / fs_local
                 writer.writerow([indice, f"{timestamp_s:.2f}", valor, f"{cpm:.1f}"])
+                writer.writerow([indice, f"{timestamp_s:.2f}", valor, f"{prof_cm:.1f}"])
 
     # 4) Limitar memoria RAM
     if len(datos_z) > 2000:
@@ -133,7 +134,7 @@ def descargar_csv():
     # Reiniciar CSV con encabezados
     with open(archivo_csv, mode='w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm"])
+        writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm", "prof_cm"])
 
 
     # Devolver como archivo descargable
@@ -173,7 +174,10 @@ def metrics_json():
     try:
         results = compute_metrics_from_cpm(df = pd.read_csv( archivo_csv, encoding="latin1"), pause_threshold_s=10.0,
                                            sustained_high_thr=130.0,
-                                           sustained_high_min_s=10.0)
+                                           sustained_high_min_s=10.0, depth_low_cm = 5.0,
+                                           depth_high_cm = 6.0,
+                                           depth_alarm_low_cm = 4.5,
+                                           depth_alarm_min_s= 10.0)
         
         return jsonify(results)
     except Exception as e:
@@ -188,7 +192,10 @@ def reporte_html():
     try:
         results = compute_metrics_from_cpm(df = pd.read_csv( archivo_csv, encoding="latin1"), pause_threshold_s=10.0,
                                            sustained_high_thr=130.0,
-                                           sustained_high_min_s=10.0)
+                                           sustained_high_min_s=10.0, depth_low_cm = 5.0,
+                                           depth_high_cm = 6.0,
+                                           depth_alarm_low_cm = 4.5,
+                                           depth_alarm_min_s= 10.0)
         print(results)
         return render_template("reporte.html", metrics=results)
        

@@ -64,7 +64,7 @@
           </div>
 
           <div class="metric">
-            <div class="metric-value" id="metric-prof">--</div>
+            <div class="metric-value" id="metric-prof">0</div>
             <div class="metric-label">Profundidad de compresión</div>
           </div>
 
@@ -255,7 +255,7 @@
 
       // Sesión (si tu endpoint trae esto)
       document.getElementById("session-duration").textContent = d.session?.duration ?? "—";
-      document.getElementById("session-compressions").textContent = d.session?.compressions ?? "—";
+      document.getElementById("session-compressions").textContent = d.session?.prof_cm ?? "—";
 
       // Métricas rápidas (opcional)
       document.getElementById("metric-cpm").textContent = d.session?.cpm ?? "—";
