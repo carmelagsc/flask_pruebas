@@ -16,10 +16,10 @@ app.register_blueprint(stats_bp)
 
 datos_z = []
 archivo_csv = "datos.csv"
-guardando = False  # Estado de adquisición
+guardando = False  
 comentario_actual = ""
 
-# Crear el CSV si no existe (con las 3 columnas que luego escribes)
+# Crear el CSV si no existe 
 if not os.path.exists(archivo_csv):
     with open(archivo_csv, mode='w', newline='') as f:
         writer = csv.writer(f)
@@ -27,34 +27,29 @@ if not os.path.exists(archivo_csv):
 
 @app.route("/")
 def mostrar_grafico():
-    # Renderiza plantilla con pestañas
     return render_template("index.html")
 
-@app.route("/start", methods=["POST"])
+@app.route("/start", methods=["POST"]) #Esta ruta permite iniciar la grabación de la sesión mediante el boton start
 def start():
     global guardando, datos_z, comentario_actual
     datos_z = []
     guardando = True
     comentario_actual = request.json.get("comentario", "").strip()
-
-    # ⬇️ Reiniciar estados del filtro/streaming/calibración
     try:
         ft.reset_stream()
     except Exception:
         pass
-
-    # Reiniciar CSV con encabezados
-    with open(archivo_csv, mode='w', newline='') as f:
+  
+    with open(archivo_csv, mode='w', newline='') as f:   # Reiniciar CSV 
         writer = csv.writer(f)
         writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm", "prof_cm"])
 
     return "Guardado iniciado"
 
-@app.route("/stop", methods=["POST"])
+@app.route("/stop", methods=["POST"]) # Esta ruta permite frenar el guardado y la sesión para el análisis de métricas
 def stop_recording():
     global guardando
-    guardando = False  # 1) frena la captura
-
+    guardando = False 
     try:
         results = compute_metrics_from_cpm( df = pd.read_csv( archivo_csv, encoding="latin1"), pause_threshold_s=10.0,
                                            sustained_high_thr=130.0,
@@ -67,14 +62,14 @@ def stop_recording():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-@app.route("/datos")
+@app.route("/datos") #ruta para ordenar los datos en json
 def datos_json():
     return jsonify({
         "valores": datos_z,
         "indices": list(range(len(datos_z)))
     })
 
-@app.route("/esp32", methods=["POST"])
+@app.route("/esp32", methods=["POST"])  #ruta para recibir las muestras desde la esp32
 def recibir_datos():
     global datos_z, guardando, comentario_actual
 
@@ -83,24 +78,18 @@ def recibir_datos():
         nuevas_medidas = [float(linea) for linea in contenido.splitlines() if linea]
     except ValueError:
         return "CPM:0,PROF:0.0"
-
-    # 1) Buffer en memoria (para stats/UI/descarga)
-    start_index = len(datos_z)
+    
+    start_index = len(datos_z) #Buffer en memoria 
     datos_z.extend(nuevas_medidas)
 
-    # 2) ⬇️ Procesar SOLO este lote con el filtro causal (estado interno + calibración 5 cm)
     try:
         m = ft.update_stream(nuevas_medidas)
         n_comp = m["n_comp"]
         cpm    = m["cpm"]
-        prof_cm = m["depth_cm"]        # ¡Ojo! ahora es relativo al baseline=5 cm
-        # Extras disponibles si querés: m["pct_target"], m["hit_5cm"], m["calibrated"],
-        #                               m["no_rcp_active"], m["no_rcp_time_s"]
     except Exception:
         n_comp, cpm, prof_cm = 0, 0.0, 0.0
 
-    # 3) Guardado opcional a CSV (con timestamp y cpm)
-    if guardando:
+    if guardando: #guardado en el cvs para descargar
         fs_local = getattr(ft, "fs", 100)
         with open(archivo_csv, mode='a', newline='') as f:
             writer = csv.writer(f)
@@ -110,34 +99,23 @@ def recibir_datos():
                 writer.writerow([indice, f"{timestamp_s:.2f}", valor, f"{cpm:.1f}"])
                 writer.writerow([indice, f"{timestamp_s:.2f}", valor, f"{prof_cm:.1f}"])
 
-    # 4) Limitar memoria RAM
-    if len(datos_z) > 2000:
+    if len(datos_z) > 2000:  #Limitar memoria RAM
         datos_z = datos_z[-2000:]
-
-    # 5) Responder a la ESP32 (protocolo intacto)
-    return f"CPM:{int(round(cpm))},PROF:{prof_cm:.1f}"
+    return f"CPM:{int(round(cpm))},PROF:{prof_cm:.1f}" #respuesta a la esp32
 
 
-@app.route("/descargar")
+@app.route("/descargar") #ruta par descargar el csv
 def descargar_csv():
     global datos_z
     global guardando
     guardando = False
-
-    # Leer contenido actual del archivo CSV
     with open(archivo_csv, "r") as f:
         contenido = f.read()
-
-    # Vaciar la variable en memoria
     datos_z = []
-
-    # Reiniciar CSV con encabezados
     with open(archivo_csv, mode='w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm", "prof_cm"])
 
-
-    # Devolver como archivo descargable
     return send_file(
         io.BytesIO(contenido.encode("utf-8")),
         mimetype="text/csv",
@@ -145,7 +123,7 @@ def descargar_csv():
         download_name="datos_pruebas_profundidad.csv"
     )
 
-@app.route("/cal_status")
+@app.route("/cal_status") #calculos para la profundidad
 def cal_status():
     try:
         m = ft.get_last_metrics()
@@ -168,7 +146,7 @@ def stats():
     return jsonify({'n_comp': m["n_comp"], 'cpm': m["cpm"]})
 
 
-@app.route("/metrics")
+@app.route("/metrics") #calculo de metricas
 def metrics_json():
     """Devuelve el JSON de métricas CPM-only computado desde datos.csv (salta 9 s iniciales)."""
     try:
@@ -185,10 +163,6 @@ def metrics_json():
     
 @app.route("/reporte")
 def reporte_html():
-    """
-    Renderiza el informe clásico en una pestaña HTML.
-    Internamente lee /metrics y pasa 'metrics' al template.
-    """
     try:
         results = compute_metrics_from_cpm(df = pd.read_csv( archivo_csv, encoding="latin1"), pause_threshold_s=10.0,
                                            sustained_high_thr=130.0,
@@ -201,7 +175,6 @@ def reporte_html():
        
 
     except Exception as e:
-        # Muestra el error en la UI si algo falla
         return render_template("reporte.html", metrics=None, error=str(e))
 
 class State:
@@ -234,12 +207,11 @@ def mmss_from_seconds(seconds):
     m, s = divmod(int(seconds), 60)
     return f"{m:02d}:{s:02d}"
 
-# ---- Página de la pestaña "Información del equipo" ----
-@app.route("/info")
+
+@app.route("/info") #info del equipo
 def info_equipo():
     return render_template("info_equipo.html")
 
-# ---- API sencilla que consume el HTML para poblar datos ----
 @app.route("/api/device-info")
 def api_device_info():
     if state.session_active and state.session_start_ts:
@@ -249,7 +221,6 @@ def api_device_info():
         elapsed = None
         sess_status = "Detenido"
 
-    # IP del servidor (LAN)
     server_ip = request.host.split(":")[0] if request.host else "—"
 
     payload = {
@@ -277,8 +248,6 @@ def api_device_info():
 @app.route("/guia")
 def guia_html():
       return render_template("guia.html")
-
-
 
 
 if __name__ == "__main__":
