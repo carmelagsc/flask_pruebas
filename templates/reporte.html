@@ -85,7 +85,7 @@
         </div>
       </div>
     </div>
-{# ==================== PROFUNDIDAD (si está disponible) ==================== #}s
+   <!-- Profundidad -->
     {% if d %}
       <div class="card mb-3">
         <div class="card-body">
@@ -126,7 +126,7 @@
         </div>
       </div>
 
-      {# ===== Alarmas de profundidad (si las hay) ===== #}
+ <!-- Alarmas de profundidad -->
       {% if metrics.cpr_quality.alarms.sustained_shallow_depth is defined
             and metrics.cpr_quality.alarms.sustained_shallow_depth.segments
             and metrics.cpr_quality.alarms.sustained_shallow_depth.segments|length > 0 %}

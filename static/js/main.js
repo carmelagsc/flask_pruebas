@@ -1,4 +1,3 @@
-// === gráfic ===
 const ctx = document.getElementById('grafico').getContext('2d');
 const config = {
   type: 'line',
@@ -25,15 +24,15 @@ async function actualizarStats(){
   document.getElementById('n_comp').textContent = j.n_comp;
   document.getElementById('cpm').textContent    = j.cpm.toFixed(1);
 
-  // Métricas grandes
+  
   document.getElementById('metric-cpm').textContent = j.cpm.toFixed(0);
   // Si más adelante calculás profundidad/tiempos reales, actualizá aquí:
   // document.getElementById('metric-prof').textContent = `${profundidad.toFixed(1)} cm`;
 }
 setInterval(actualizarStats, 300);
-const reportBtn    = document.getElementById('btn-ver-reporte'); // botón "Ver Reporte"
-const reportTabBtn = document.getElementById('tab-reporte-tab'); // botón de la tab Reporte (Bootstrap)
-const reportFrame  = document.getElementById('report-frame');    // <iframe src="/reporte">
+const reportBtn    = document.getElementById('btn-ver-reporte'); 
+const reportTabBtn = document.getElementById('tab-reporte-tab'); 
+const reportFrame  = document.getElementById('report-frame');    
 
 function reloadReportFrame(){
   if (!reportFrame) return;
@@ -49,12 +48,12 @@ function showReportTabAndReload(){
   reloadReportFrame();
 }
 
-// Habilitar/Deshabilitar botón "Ver Reporte" SIN abrir nueva pestaña
+
 function toggleReporte(enable){
   if (!reportBtn) return;
   reportBtn.disabled = !enable;
   reportBtn.onclick = enable
-    ? () => showReportTabAndReload()  // 👈 cambia a la tab y recarga el iframe
+    ? () => showReportTabAndReload()  
     : null;
 }
 
@@ -75,7 +74,7 @@ async function detener(){
   try {
     if (stopBtn) { stopBtn.disabled = true; stopBtn.textContent = 'Deteniendo...'; }
 
-    // Backend debe responder JSON {"ok": true}
+
     const res = await fetch('/stop', { method: 'POST' });
     const ct  = res.headers.get('content-type') || '';
     const data = ct.includes('application/json') ? await res.json() : null;
@@ -90,7 +89,7 @@ async function detener(){
       return;
     }
 
-    // ✅ Habilitar botón "Ver Reporte" y saltar a la tab Reporte
+ 
     toggleReporte(true);
     
 
@@ -136,12 +135,11 @@ function startTimerRCP({reset=true} = {}){
 }
 
 function stopTimerRCP(){
-  // acumulo lo transcurrido y freno el intervalo
   if (rcpStartTs){
     rcpAccumulated += (Date.now() - rcpStartTs);
     rcpStartTs = null;
   }
   clearInterval(rcpTimerInterval);
   rcpTimerInterval = null;
-  renderRcpTime(rcpAccumulated); // pintar valor final
+  renderRcpTime(rcpAccumulated);
 }

@@ -96,7 +96,7 @@
             </div>
           </div>
 
-          <!-- resumen rápido (opcional) -->
+          <!-- resumen rápido-->
           <div class="quick-stats text-muted mt-2">
             Compresiones detectadas: <span id="n_comp">0</span> ·
             CPM: <span id="cpm">0.0</span>
@@ -313,18 +313,16 @@
       stopEquipoAuto(); // por si venías de Equipo
     }
 
-    // Equipo: iniciar auto-refresh al entrar
+
     if (ev.target && ev.target.id === "tab-equipo-tab") {
       startEquipoAuto();
     }
 
-    // Datos o cualquier otra: detener auto-refresh
     if (ev.target && (ev.target.id === "tab-datos-tab" || ev.target.id === "tab-guia-tab")) {
       stopEquipoAuto();
     }
   });
 
-  // Si la página carga con una tab activa específica
   window.addEventListener("DOMContentLoaded", () => {
     const active = document.querySelector(".nav-link.active");
     if (active && active.id === "tab-equipo-tab") startEquipoAuto();
