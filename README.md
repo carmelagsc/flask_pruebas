@@ -1,7 +1,7 @@
                     ┌─────────────────────────────┐
                     │        Dispositivo ESP32     │
                     │  - Aceleración (muestras)    │
-                    │  - Calcula CPM/PROF          │
+                    │                              │
                     │  - Wi-Fi HTTP POST           │
                     └──────────────┬───────────────┘
                                    │  POST /esp32 (muestras)
@@ -28,7 +28,8 @@
         │   ┌────────────────────┐   ┌──────────────────────────┐  │
         │   │ Filtro (ft)        │   │ Analyzer (cpr_metrics)   │  │
         │   │ - compute_counts   │   │ - compresiones totales   │  │
-        │   │ - compute_depth    │   │ - CPM medio/mediana      │  │
+        │   │ - compute_depth    │   │ - CPM y PROF medio/      |  |
+            |                    |   |      mediana             │  │
         │   │ - robustez errores │   │ - pausas, CCF, % en rango│  │
         │   └────────────────────┘   └──────────────────────────┘  │
         │                                                          │
