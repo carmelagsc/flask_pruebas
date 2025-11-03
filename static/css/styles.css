@@ -62,13 +62,13 @@ body{ background:var(--bg); color:var(--ink); }
 .btn-soft:hover{ filter:brightness(0.97); }
 .btn-soft.disabled{ opacity:.55; pointer-events:none; }
 
-/* Placeholder tab 2 */
+
 .placeholder-panel{ padding:16px; }
 .placeholder-box{
   height:340px; border:1px dashed var(--stroke);
   border-radius:12px; background:#f3f5ff;
 }
 
-/* Pequeños ajustes */
+
 .quick-stats{ font-size:13px; }
 textarea#comentario{ min-width:260px; }
