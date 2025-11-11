@@ -23,9 +23,11 @@ async function actualizarStats(){
   const r = await fetch('/stats'); const j = await r.json();
   document.getElementById('n_comp').textContent = j.n_comp;
   document.getElementById('cpm').textContent    = j.cpm.toFixed(1);
-
-  
   document.getElementById('metric-cpm').textContent = j.cpm.toFixed(0);
+  document.getElementById('prof_cm').textContent = j.prof_cm.toFixed(1);
+  document.getElementById('metric-prof').textContent = j.prof_cm.toFixed(1);
+
+
   // Si más adelante calculás profundidad/tiempos reales, actualizá aquí:
   // document.getElementById('metric-prof').textContent = `${profundidad.toFixed(1)} cm`;
 }
@@ -143,3 +145,5 @@ function stopTimerRCP(){
   rcpTimerInterval = null;
   renderRcpTime(rcpAccumulated);
 }
+
+

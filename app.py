@@ -86,6 +86,8 @@ def recibir_datos():
         m = ft.update_stream(nuevas_medidas)
         n_comp = m["n_comp"]
         cpm    = m["cpm"]
+        prof_cm= m["depth_cm"]
+        
     except Exception:
         n_comp, cpm, prof_cm = 0, 0.0, 0.0
 
@@ -96,8 +98,7 @@ def recibir_datos():
             for i, valor in enumerate(nuevas_medidas):
                 indice = start_index + i
                 timestamp_s = indice / fs_local
-                writer.writerow([indice, f"{timestamp_s:.2f}", valor, f"{cpm:.1f}"])
-                writer.writerow([indice, f"{timestamp_s:.2f}", valor, f"{prof_cm:.1f}"])
+                writer.writerow([indice, f"{timestamp_s:.2f}", valor, f"{cpm:.1f}", f"{prof_cm:.1f}"])
 
     if len(datos_z) > 2000:  #Limitar memoria RAM
         datos_z = datos_z[-2000:]
@@ -143,7 +144,7 @@ def cal_status():
 def stats():
     arr = datos_z
     m = ft.get_last_metrics()   # ya está procesando en /esp32
-    return jsonify({'n_comp': m["n_comp"], 'cpm': m["cpm"]})
+    return jsonify({'n_comp': m["n_comp"], 'cpm': m["cpm"],'prof_cm':m["depth_cm"] })
 
 
 @app.route("/metrics") #calculo de metricas

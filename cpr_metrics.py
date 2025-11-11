@@ -99,43 +99,45 @@ def _time_weighted_percent(times_s: np.ndarray, values: np.ndarray, lo: float, h
             acc += dt
     return 100.0 * acc / total
 
-def _time_weighted_mean(times_s: np.ndarray, values: np.ndarray) -> float:
-    # Calcula la media ponderada por tiempo de la señal (otra vez, step-hold entre muestras)
-    n = len(values)
+def _time_weighted_mean(times_s: np.ndarray, values) -> float:
+    """Media ponderada por tiempo (modelo step-hold).
+    Acepta pandas.Series o numpy.ndarray."""
+    t = np.asarray(times_s, dtype=float)
+    v = np.asarray(values,  dtype=float)
+    n = v.shape[0]
     if n < 2:
-        return float(values.iloc[0]) if n == 1 else float("nan")
-    total = float(times_s[-1] - times_s[0])
+        return float(v[0]) if n == 1 else float("nan")
+    total = float(t[-1] - t[0])
     if total <= 0:
         return float("nan")
     acc = 0.0
-    for i in range(n-1):
-        dt = times_s[i+1] - times_s[i]
-        if dt <= 0:
-            continue
-        acc += values.iloc[i] * dt
+    for i in range(n - 1):
+        dt = t[i+1] - t[i]
+        if dt > 0:
+            acc += v[i] * dt
     return acc / total
 
-def _time_weighted_std(times_s: np.ndarray, values: pd.Series) -> float:
-    """
-    Calcula el desvío estándar poblacional ponderado
-    por tiempo (respecto de la media ponderada anterior).
-    """
-    mu = _time_weighted_mean(times_s, values)
-    n = len(values)
+def _time_weighted_std(times_s: np.ndarray, values) -> float:
+    """Desvío estándar poblacional ponderado por tiempo (step-hold).
+    Acepta pandas.Series o numpy.ndarray."""
+    t = np.asarray(times_s, dtype=float)
+    v = np.asarray(values,  dtype=float)
+    n = v.shape[0]
+    mu = _time_weighted_mean(t, v)
     if n < 2 or not np.isfinite(mu):
         return float("nan")
-    total = float(times_s[-1] - times_s[0])
+    total = float(t[-1] - t[0])
     if total <= 0:
         return float("nan")
     var_acc = 0.0
-    for i in range(n-1):
-        dt = times_s[i+1] - times_s[i]
-        if dt <= 0:
-            continue
-        diff = values.iloc[i] - mu
-        var_acc += (diff * diff) * dt
+    for i in range(n - 1):
+        dt = t[i+1] - t[i]
+        if dt > 0:
+            diff = v[i] - mu
+            var_acc += (diff * diff) * dt
     var = var_acc / total
     return float(np.sqrt(var))
+
 
 def _contiguous_zero_pauses(times_s: np.ndarray, values: np.ndarray, min_pause_s: float) -> List[Tuple[float,float]]:
     #Detecta pausas donde CPM == 0 de forma contigua y devuelve solo las que duran al menos min_pause_s (10s).
@@ -230,6 +232,14 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
         in_5_6_pct = _time_weighted_percent(ts_s.values, depth_cm.values, depth_low_cm, depth_high_cm)
         below_5_pct = _time_weighted_percent(ts_s.values, depth_cm.values, -1e9, depth_low_cm - 1e-9)
         above_6_pct = _time_weighted_percent(ts_s.values, depth_cm.values, depth_high_cm + 1e-9, 1e9)
+        depth_block = {
+                "mean_cm": mean_depth,
+                "median_cm": median_depth,
+                "std_cm": std_depth,
+                "in_target_pct_5_6": in_5_6_pct,
+                "below_5_pct": below_5_pct,
+                "above_6_pct": above_6_pct,
+                        }
 
 
 

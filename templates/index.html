@@ -65,7 +65,7 @@
 
           <div class="metric">
             <div class="metric-value" id="metric-prof">0</div>
-            <div class="metric-label">Profundidad de compresión</div>
+            <div class="metric-label">Profundidad de compresión en cm</div>
           </div>
 
           <div class="metric">
@@ -100,7 +100,7 @@
           <div class="quick-stats text-muted mt-2">
             Compresiones detectadas: <span id="n_comp">0</span> ·
             CPM: <span id="cpm">0.0</span>
-            Prof: <span id="depth_cm">0.0</span>
+            Prof: <span id="prof_cm">0.0</span>
           </div>
         </div>
       </div>
@@ -259,6 +259,7 @@
 
       // Métricas rápidas (opcional)
       document.getElementById("metric-cpm").textContent = d.session?.cpm ?? "—";
+      document.getElementById("metric-prof").textContent = d.session?.prof_cm ?? "—";
 
       // Conexión
       const connBadge = document.getElementById("conn-status");
