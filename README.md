@@ -45,3 +45,61 @@
           │  - Botones: POST /start, POST /stop    │
           │  - Ver /reporte y bajar /descargar     │
           └────────────────────────────────────────┘
+
+
+
+
+
+Diagrama de la válidación de la página y los algoritmos
+
+ ┌──────────────────────────┐
+ │  Inicio de la validación │
+ └───────────────┬──────────┘
+                 │
+                 ▼
+ ┌────────────────────────────────────────┐
+ │ Definir objetivo: validar algoritmo e │
+ │ interfaz sin depender de datos reales │
+ └─────────────────┬──────────────────────┘
+                   │
+                   ▼
+ ┌─────────────────────────────────────────────┐
+ │ Seleccionar método de validación sintético  │
+ │ (modelo matemático de la señal de RCP)     │
+ └─────────────────┬───────────────────────────┘
+                   │
+                   ▼
+ ┌─────────────────────────────────────────────┐
+ │ Construir modelo de señal: tren de semisenos│
+ │ (parámetros: A, w, b, f, ruido)             │
+ └──────────────────┬──────────────────────────┘
+                    │
+                    ▼
+ ┌─────────────────────────────────────────────┐
+ │ Generar barrido de parámetros               │
+ │ f ∈ [1.6, 2.0] Hz                            │
+ │ ϕ ∈ [0.1, 0.4] s                             │
+ └──────────────────┬──────────────────────────┘
+                    │
+                    ▼
+ ┌─────────────────────────────────────────────┐
+ │ Comparar modelo con señal real (CR3)       │
+ │ Calcular correlación de Pearson            │
+ └──────────────────┬──────────────────────────┘
+                    │
+                    ▼
+ ┌─────────────────────────────────────────────┐
+ │ Seleccionar combinación (f*,ϕ*) con máxima  │
+ │ correlación                                 │
+ └──────────────────┬──────────────────────────┘
+                    │
+                    ▼
+ ┌─────────────────────────────────────────────┐
+ │ Validar algoritmo de detección, gráficos,   │
+ │ métricas e interfaz con señal sintética     │
+ └──────────────────┬──────────────────────────┘
+                    │
+                    ▼
+ ┌──────────────────────────┐
+ │ Validación completada    │
+ └──────────────────────────┘
