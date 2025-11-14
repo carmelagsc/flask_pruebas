@@ -53,7 +53,7 @@ def stop_recording():
     try:
         results = compute_metrics_from_cpm( df = pd.read_csv( archivo_csv, encoding="latin1"), pause_threshold_s=10.0,
                                            sustained_high_thr=130.0,
-                                           sustained_high_min_s=10.0, depth_low_cm = 5.0,
+                                           sustained_high_min_s=20.0, depth_low_cm = 4.8,
                                            depth_high_cm = 6.0,
                                            depth_alarm_low_cm = 4.5,
                                            depth_alarm_min_s= 10.0,)
@@ -153,7 +153,7 @@ def metrics_json():
     try:
         results = compute_metrics_from_cpm(df = pd.read_csv( archivo_csv, encoding="latin1"), pause_threshold_s=10.0,
                                            sustained_high_thr=130.0,
-                                           sustained_high_min_s=10.0, depth_low_cm = 5.0,
+                                           sustained_high_min_s=20.0, depth_low_cm = 4.8,
                                            depth_high_cm = 6.0,
                                            depth_alarm_low_cm = 4.5,
                                            depth_alarm_min_s= 10.0)
@@ -167,7 +167,7 @@ def reporte_html():
     try:
         results = compute_metrics_from_cpm(df = pd.read_csv( archivo_csv, encoding="latin1"), pause_threshold_s=10.0,
                                            sustained_high_thr=130.0,
-                                           sustained_high_min_s=10.0, depth_low_cm = 5.0,
+                                           sustained_high_min_s=20.0, depth_low_cm = 4.8,
                                            depth_high_cm = 6.0,
                                            depth_alarm_low_cm = 4.5,
                                            depth_alarm_min_s= 10.0)

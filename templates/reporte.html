@@ -37,12 +37,40 @@
           </div>
           <div class="col-12 col-md-6">
             <ul class="list-unstyled mb-0">
-              <li>Frec. mediana: <strong>{{ rbpm.median if rbpm.median is not none else 'N/D' }}</strong> cpm</li>
-              <li>Prof. mediana:<strong>{{ d.median_cm if d.median_cm is not none else 'N/D' }}</strong> cm </li>
-              <li>% en 100–120: <strong>{{ fmt(rbpm.in_target_pct_100_120) }}%</strong></li>
-              <li>% en 5–6 cm<strong>{{ fmt(d.in_target_pct_5_6) }}%</strong></li>
+              <li>Frec. mediana:
+                {% set f_m = rbpm.median %}
+                {% if f_m is not none %}
+                  <span class="badge text-bg-{{ 'success' if f_m >= 100 else 'danger' }}">{{ fmt(f_m) }} cpm</span>
+                {% else %}
+                  N/D
+                {% endif %}
+              </li>
+              <li>Prof. mediana:
+                {% set p_m = d.median_cm %}
+                {% if p_m is not none %}
+                  <span class="badge text-bg-{{ 'success' if f_m >= 5 else 'danger' }}">{{ fmt(p_m) }} cm</span>
+                {% else %}
+                  N/D
+                {% endif %}
+              </li>
+              <li>% en 100–120: 
+                {% set p_100 = rbpm.in_target_pct_100_120 %}
+                {% if p_100 is not none %}
+                  <span class="badge text-bg-{{ 'success' if p_100 > 85 else 'danger' }}">{{ fmt(rbpm.in_target_pct_100_120) }} %</span>
+                {% else %}
+                  N/D
+                {% endif %}
+              </li>
+              <li>% en 5–6 cm<strong>{{ fmt(d.in_target_pct_5_6) }}%</strong>
+                {% set t_p = d.in_target_pct_5_6 %}
+                {% if t_p is not none %}
+                  <span class="badge text-bg-{{ 'success' if t_p > 85 else 'danger' }}">{{ fmt(d.in_target_pct_5_6) }} %</span>
+                {% else %}
+                  N/D
+                {% endif %}
+              </li>
               <li>
-                CF:
+                Fracción de Compresión:
                 {% set cf = q.compression_fraction_pct %}
                 {% if cf is not none %}
                   <span class="badge text-bg-{{ 'success' if cf >= 60 else 'danger' }}">{{ fmt(cf) }}%</span>
