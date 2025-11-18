@@ -178,14 +178,30 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
     cpm = _require_cpm(df)
     depth_cm = _require_depth_cm(df) 
     #ignorar los primeros 9s que no calcula todavia cpm
-    #mask = ts_s - ts_s.iloc[0] >= 9.0
-   # ts_s = ts_s[mask].reset_index(drop=True)
-    #cpm = cpm[mask].reset_index(drop=True)
+    mask = ts_s - ts_s.iloc[0] >= 9.0
+    ts_s = ts_s[mask].reset_index(drop=True)
+    cpm = cpm[mask].reset_index(drop=True)
+ # --- BLOQUE NUEVO: si el tiempo del CSV está roto, lo reconstruimos ---
+    n = len(cpm)
+    if n >= 2:
+        dt = np.diff(ts_s.values.astype(float))
+        total_duration = float(ts_s.iloc[-1] - ts_s.iloc[0])
 
-    # Ensure monotonic time
+        # Caso típico de tu CSV: dt=0 a partir de cierto punto, o duración casi nula
+        if (dt <= 0).any() or total_duration <= 0:
+            fs_assumed = 100.0  # Hz: ajustar si tu fs real es otro
+            ts_s = pd.Series(np.arange(n, dtype=float) / fs_assumed)
+    else:
+        # Con 0 ó 1 muestra, inventamos tiempo igual
+        fs_assumed = 100.0
+        ts_s = pd.Series(np.arange(n, dtype=float) / fs_assumed)
+
+    # Aseguramos que todo quede ordenado y alineado
     order = np.argsort(ts_s.values)
     ts_s = ts_s.iloc[order].reset_index(drop=True)
     cpm = cpm.iloc[order].reset_index(drop=True)
+    if depth_cm is not None:
+        depth_cm = depth_cm.iloc[order].reset_index(drop=True)
 
     n = len(cpm)
     duration_s = float(ts_s.iloc[-1]) if n >= 2 else 0.0
@@ -201,7 +217,7 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
     time_with_comp_s = 0.0
     if n >= 2:
         for i in range(n-1):
-            dt = ts_s.iloc[i+1]/2 - ts_s.iloc[i]/2  #me marca como si la frecuencia estuviera en 50 - no se porque por eso divido por dos
+            dt = ts_s.iloc[i+1] - ts_s.iloc[i] #me marca como si la frecuencia estuviera en 50 - no se porque por eso divido por dos
             if dt > 0 and cpm.iloc[i] > 0:
                 time_with_comp_s += dt
     compression_fraction_pct = 100.0 * time_with_comp_s / duration_s if duration_s > 0 else 0.0
