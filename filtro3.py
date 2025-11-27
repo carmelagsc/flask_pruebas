@@ -1,6 +1,7 @@
 # filtro2.py — streaming causal + no RCP + calibración relativa a 5 cm
 import numpy as np
 from scipy.signal import butter, sosfilt, sosfilt_zi, find_peaks
+import time # Añadimos time para CAL_N_INIT en reset_stream
 
 # =========================
 # Parámetros de procesamiento
@@ -77,13 +78,16 @@ _cal_baseline_prom = None      # mediana de prominencias iniciales ≡ 5 cm
 _cal_prom_buffer = []          # guarda prominencias válidas para armar baseline
 _recent_proms = []             # últimas prominencias para monitoreo de drift/cambio operador
 
-def reset_stream():
-    """Reinicia estados de filtro, detección, no RCP y calibración."""
+def reset_stream(fixed_baseline_prom: float = None):
+    """Reinicia estados de filtro, detección, no RCP y calibración.
+    🟢 Acepta un baseline fijo opcional para 5 cm.
+    """
     global _zi_hp, _zi_bp, _global_idx, _y_filt_stream, _last_batch_edge
     global _mad_buffer, _last_peaks, _last_n, _last_cpm
     global _last_depth_cm, _last_pct_target, _hit_5cm
     global _quiet_consec, _no_rcp_active, _no_rcp_start_idx, _no_rcp_time_s, _last_norcp_segment_s
     global _calibrated, _cal_baseline_prom, _cal_prom_buffer, _recent_proms
+    global CAL_N_INIT # Necesario para prellenar el buffer
 
     _zi_hp = sosfilt_zi(_sos_hp) * 0.0
     _zi_bp = sosfilt_zi(_sos_bp) * 0.0
@@ -112,8 +116,16 @@ def reset_stream():
     _cal_prom_buffer = []
     _recent_proms = []
 
+    # 🟢 NUEVO: Aplicar baseline fijo si se proporciona
+    if fixed_baseline_prom is not None and fixed_baseline_prom > 0:
+        _cal_baseline_prom = fixed_baseline_prom
+        _calibrated = True
+        # Prellenar buffers para que el monitoreo de drift funcione desde el inicio
+        _cal_prom_buffer = [fixed_baseline_prom] * CAL_N_INIT
+        _recent_proms = [fixed_baseline_prom] * 5 # Valor arbitrario > CAL_SMOOTH_K
 
 def _mad_adaptive_threshold(y: np.ndarray) -> float:
+    """Calcula el umbral de prominencia adaptativo (basado en Desviación Absoluta Mediana)."""
     global _mad_buffer
     if y.size == 0:
         return 0.0
@@ -122,12 +134,13 @@ def _mad_adaptive_threshold(y: np.ndarray) -> float:
         _mad_buffer = _mad_buffer[-mad_win_max:]
     med = np.median(_mad_buffer)
     mad = np.median(np.abs(_mad_buffer - med))
-    prom = 1.0 * 1.4826 * mad
+    # 1.4826 es el factor de corrección para estimar el Desvío Estándar (sigma) a partir del MAD
+    prom = 1.0 * 1.4826 * mad 
     return prom
 
 
 def _update_quiet_counter(raw_samples: np.ndarray):
-    """Actualiza contador 'no RCP' y duración del último segmento quieto."""
+    """Actualiza contador 'no RCP' y duración del último segmento quieto (detección de pausas/manos fuera)."""
     global _quiet_consec, _no_rcp_active, _no_rcp_start_idx, _no_rcp_time_s
     global _global_idx, _last_norcp_segment_s
     for v in raw_samples:
@@ -148,9 +161,9 @@ def _update_quiet_counter(raw_samples: np.ndarray):
 
 
 def _maybe_trigger_recalibration():
-    """Gatilla recalibración si hubo no-RCP prolongado o cambio de amplitud."""
+    """Gatilla recalibración si hubo no-RCP prolongado o cambio de amplitud (drift/cambio de operador)."""
     global _calibrated, _cal_baseline_prom, _cal_prom_buffer, _recent_proms, _last_norcp_segment_s
-    # 1) no RCP prolongado
+    # 1) no RCP prolongado (pausa larga)
     if _last_norcp_segment_s >= NORCP_RECAL_S:
         _calibrated = False
         _cal_baseline_prom = None
@@ -172,17 +185,17 @@ def _maybe_trigger_recalibration():
 
 
 def _accept_for_calibration(proms: np.ndarray) -> np.ndarray:
-    """Filtra prominencias 'buenas' para armar baseline."""
+    """Filtra prominencias 'buenas' para armar baseline (criterio robusto)."""
     if proms.size == 0:
         return proms
-    # criterio robusto: aceptar valores por encima de un umbral relativo al Q3 local
+    # criterio robusto: aceptar valores por encima de un umbral relativo al Cuantil 75% local
     q3 = np.percentile(proms, 75)
     th = CAL_MIN_PROM_FACTOR * q3
     return proms[proms >= th]
 
 
 def _update_calibration_and_metrics(props):
-    """Actualiza baseline (si pendiente) y calcula métricas relativas (5 cm)."""
+    """Actualiza baseline (si pendiente y no se usó fijo) y calcula métricas relativas (5 cm)."""
     global _calibrated, _cal_baseline_prom, _cal_prom_buffer
     global _last_depth_cm, _last_pct_target, _hit_5cm, _recent_proms
 
@@ -196,7 +209,7 @@ def _update_calibration_and_metrics(props):
     if len(_recent_proms) > 50:
         _recent_proms = _recent_proms[-50:]
 
-    # Si no está calibrado, intentar calibrar con las prominencias de este lote
+    # Si NO está calibrado (y no se usó un baseline fijo al inicio), intenta calibrar
     if CAL_ENABLE and (not _calibrated):
         good = _accept_for_calibration(proms)
         if good.size > 0:
@@ -213,10 +226,14 @@ def _update_calibration_and_metrics(props):
     # Con baseline fijado, calcular % objetivo y profundidad relativa
     if _calibrated and (_cal_baseline_prom is not None) and (_cal_baseline_prom > 0):
         k = min(CAL_SMOOTH_K, proms.size)
+        # La prominencia es suavizada (mediana de las últimas K proms del lote)
         prom_smooth = float(np.median(proms[-k:])) if k > 0 else float(np.median(proms))
+        
+        # % del objetivo (100% = baseline)
         pct = 100.0 * (prom_smooth / _cal_baseline_prom)
         _last_pct_target = pct
         _hit_5cm = bool(pct >= 100.0)
+        
         # estimado RELATIVO de profundidad en cm (si baseline ≡ 5 cm)
         _last_depth_cm = 5.0 * (prom_smooth / _cal_baseline_prom)
     else:
@@ -303,6 +320,7 @@ def update_stream(raw_samples):
 
 
 def get_last_metrics():
+    """Devuelve las métricas de la última ventana procesada."""
     return {
         "n_comp": int(_last_n),
         "cpm": round(float(_last_cpm), 1),

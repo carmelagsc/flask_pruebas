@@ -14,8 +14,10 @@ import json
 app = Flask(__name__)
 app.register_blueprint(stats_bp)
 
+FIXED_5CM_BASELINE = 7.5628 
+
 datos_z = []
-archivo_csv = "datos.csv"
+archivo_csv = "datos_CR.csv"
 guardando = False  
 comentario_actual = ""
 
@@ -36,9 +38,9 @@ def start():
     guardando = True
     comentario_actual = request.json.get("comentario", "").strip()
     try:
-        ft.reset_stream()
+        ft.reset_stream(fixed_baseline_prom=FIXED_5CM_BASELINE)
     except Exception:
-        pass
+        ft.reset_stream()
   
     with open(archivo_csv, mode='w', newline='') as f:   # Reiniciar CSV 
         writer = csv.writer(f)
@@ -121,7 +123,7 @@ def descargar_csv():
         io.BytesIO(contenido.encode("utf-8")),
         mimetype="text/csv",
         as_attachment=True,
-        download_name="datos_pruebas_profundidad.csv"
+        download_name="datos_pruebasCR.csv"
     )
 
 @app.route("/cal_status") #calculos para la profundidad
