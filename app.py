@@ -18,7 +18,8 @@ FIXED_5CM_BASELINE = 7.5628
 
 datos_z = []
 archivo_csv = "datos_CR.csv"
-guardando = False  
+guardando = False 
+registro_tiempo_iniciado = False 
 comentario_actual = ""
 
 # Crear el CSV si no existe 
@@ -33,9 +34,15 @@ def mostrar_grafico():
 
 @app.route("/start", methods=["POST"]) #Esta ruta permite iniciar la grabación de la sesión mediante el boton start
 def start():
-    global guardando, datos_z, comentario_actual
+    global guardando, datos_z, comentario_actual, registro_tiempo_iniciado
     datos_z = []
     guardando = True
+    #registro_tiempo_iniciado = False
+
+    global state
+    state.session_start_ts = None  # <-- Asegura que el timer esté reseteado
+    state.session_active = True    # Marcamos que la grabación está 'activa' (esperando datos)
+   
     comentario_actual = request.json.get("comentario", "").strip()
     try:
         ft.reset_stream(fixed_baseline_prom=FIXED_5CM_BASELINE)
@@ -45,13 +52,21 @@ def start():
     with open(archivo_csv, mode='w', newline='') as f:   # Reiniciar CSV 
         writer = csv.writer(f)
         writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm", "prof_cm"])
-
+    
     return "Guardado iniciado"
 
 @app.route("/stop", methods=["POST"]) # Esta ruta permite frenar el guardado y la sesión para el análisis de métricas
 def stop_recording():
-    global guardando
-    guardando = False 
+    global guardando, registro_tiempo_iniciado
+    guardando = False
+    registro_tiempo_iniciado = False # <-- Reinicia el flag
+
+    # Resetea el estado para /api/device-info
+    global state
+    state.session_active = False
+    state.session_start_ts = None
+    state.session_compressions = 0
+    state.session_cpm = None
     try:
         results = compute_metrics_from_cpm( df = pd.read_csv( archivo_csv, encoding="latin1"), pause_threshold_s=10.0,
                                            sustained_high_thr=130.0,
@@ -73,7 +88,7 @@ def datos_json():
 
 @app.route("/esp32", methods=["POST"])  #ruta para recibir las muestras desde la esp32
 def recibir_datos():
-    global datos_z, guardando, comentario_actual
+    global datos_z, guardando, comentario_actual, state
 
     contenido = request.data.decode("utf-8").strip()
     try:
@@ -83,6 +98,13 @@ def recibir_datos():
     
     start_index = len(datos_z) #Buffer en memoria 
     datos_z.extend(nuevas_medidas)
+
+
+    if guardando and state.session_start_ts is None:
+        state.session_start_ts = time.time()  # <-- Inicia el timer AQUI solo si es None
+     # Marca que el timer ya se ha iniciado
+     
+        print(f"Timer de sesión iniciado a las: {state.session_start_ts}")
 
     try:
         m = ft.update_stream(nuevas_medidas)
