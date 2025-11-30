@@ -233,4 +233,12 @@
     </div>
   </div>
   {% endif %}
+
+  {% if not error and metrics %}
+    <div class="text-center mb-3"> 
+      <a href="{{ url_for('descargar_markdown') }}" class="btn btn-info">
+        Descargar Resumen (.md)
+      </a>
+    </div>
+    {% endif %}
 {% endblock %}

@@ -10,6 +10,8 @@ import time
 from filtro3 import stats_bp
 from cpr_metrics import compute_metrics_from_cpm  
 import json
+from cpr_metrics import write_markdown_summary
+from io import BytesIO
 
 app = Flask(__name__)
 app.register_blueprint(stats_bp)
@@ -274,6 +276,31 @@ def api_device_info():
 def guia_html():
       return render_template("guia.html")
 
+@app.route('/descargar-md')
+def descargar_markdown():
+    metrics = compute_metrics_from_cpm(df = pd.read_csv( archivo_csv, encoding="latin1"), pause_threshold_s=10.0,
+                                           sustained_high_thr=130.0,
+                                           sustained_high_min_s=20.0, depth_low_cm = 4.8,
+                                           depth_high_cm = 6.0,
+                                           depth_alarm_low_cm = 4.5,
+                                           depth_alarm_min_s= 10.0)
+    
+    if not metrics:
+        return "No hay datos de métricas para exportar.", 404
+
+    # 1. Generar el resumen de Markdown
+    markdown_text = write_markdown_summary(metrics)
+    
+    # 2. Convertir la cadena de texto a un buffer de bytes
+    buffer = BytesIO(markdown_text.encode('utf-8'))
+    
+    # 3. Enviar el archivo
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name='informe_rcp_resumen.md', # Nombre del archivo
+        mimetype='text/markdown' # MIME-type para Markdown
+    )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
