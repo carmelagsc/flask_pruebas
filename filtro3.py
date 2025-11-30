@@ -197,11 +197,14 @@ def _accept_for_calibration(proms: np.ndarray) -> np.ndarray:
 def _update_calibration_and_metrics(props):
     """Actualiza baseline (si pendiente y no se usó fijo) y calcula métricas relativas (5 cm)."""
     global _calibrated, _cal_baseline_prom, _cal_prom_buffer
-    global _last_depth_cm, _last_pct_target, _hit_5cm, _recent_proms
+    global _last_depth_cm, _last_pct_target, _hit_5cm, _recent_proms, _last_cpm
 
     proms = np.asarray(props.get("prominences", []), dtype=float)
     if proms.size == 0:
         # si no hubo picos en este lote, mantener últimos valores
+        _last_depth_cm = 0.0
+        _last_pct_target = 0.0
+        _hit_5cm = False
         return
 
     # Guardar en buffer "reciente" para monitoreo de drift
@@ -233,9 +236,11 @@ def _update_calibration_and_metrics(props):
         pct = 100.0 * (prom_smooth / _cal_baseline_prom)
         _last_pct_target = pct
         _hit_5cm = bool(pct >= 100.0)
-        
-        # estimado RELATIVO de profundidad en cm (si baseline ≡ 5 cm)
+       
         _last_depth_cm = 5.0 * (prom_smooth / _cal_baseline_prom)
+        # estimado RELATIVO de profundidad en cm (si baseline ≡ 5 cm)
+         
+
     else:
         # si no calibrado aún, reportar 0 como placeholder
         _last_pct_target = 0.0
