@@ -17,7 +17,7 @@ mad_win_sec = 15.0
 mad_win_max = int(mad_win_sec * fs)
 
 # Detección de picos (máximos)
-min_distance = int(fs * 0.45)                # ~133 cpm
+min_distance = int(fs * 0.40)                # ~133 cpm
 width_minmax = (int(0.04*fs), int(0.25*fs))  # 40–250 ms
 
 # "No RCP" (dispositivo quieto alrededor de g)
