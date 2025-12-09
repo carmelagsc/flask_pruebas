@@ -23,6 +23,7 @@ archivo_csv = "datos_CR.csv"
 guardando = False 
 registro_tiempo_iniciado = False 
 comentario_actual = ""
+total_muestras_procesadas = 0
 
 # Crear el CSV si no existe 
 if not os.path.exists(archivo_csv):
@@ -36,8 +37,9 @@ def mostrar_grafico():
 
 @app.route("/start", methods=["POST"]) #Esta ruta permite iniciar la grabación de la sesión mediante el boton start
 def start():
-    global guardando, datos_z, comentario_actual, registro_tiempo_iniciado
+    global guardando, datos_z, comentario_actual, registro_tiempo_iniciado, total_muestras_procesadas
     datos_z = []
+    total_muestras_procesadas = 0
     guardando = True
     #registro_tiempo_iniciado = False
 
@@ -90,7 +92,7 @@ def datos_json():
 
 @app.route("/esp32", methods=["POST"])  #ruta para recibir las muestras desde la esp32
 def recibir_datos():
-    global datos_z, guardando, comentario_actual, state
+    global datos_z, guardando, comentario_actual, state, total_muestras_procesadas
 
     contenido = request.data.decode("utf-8").strip()
     try:
@@ -98,7 +100,7 @@ def recibir_datos():
     except ValueError:
         return "CPM:0,PROF:0.0"
     
-    start_index = len(datos_z) #Buffer en memoria 
+    #start_index = len(datos_z) #Buffer en memoria 
     datos_z.extend(nuevas_medidas)
 
 
@@ -107,7 +109,7 @@ def recibir_datos():
      # Marca que el timer ya se ha iniciado
      
         print(f"Timer de sesión iniciado a las: {state.session_start_ts}")
-
+    n_comp, cpm, prof_cm, no_rcp = 0, 0.0, 0.0, 0
     try:
         m = ft.update_stream(nuevas_medidas)
         n_comp = m["n_comp"]
@@ -118,19 +120,26 @@ def recibir_datos():
     except Exception:
         n_comp, cpm, prof_cm = 0, 0.0, 0.0
 
-    if guardando: #guardado en el cvs para descargar
-        fs_local = getattr(ft, "fs", 100)
+    if guardando: 
+        fs_local = getattr(ft, "fs", 100.0)
         with open(archivo_csv, mode='a', newline='') as f:
             writer = csv.writer(f)
+            # Usamos el contador global para mantener la continuidad del tiempo
+            start_absolute_index = total_muestras_procesadas 
+            
             for i, valor in enumerate(nuevas_medidas):
-                indice = start_index + i
-                timestamp_s = indice / fs_local
+                indice = start_absolute_index + i
+                timestamp_s = indice / fs_local # Tiempo absoluto y continuo
+                
                 writer.writerow([indice, f"{timestamp_s:.2f}", valor, f"{cpm:.1f}", f"{prof_cm:.1f}", no_rcp])
 
-    if len(datos_z) > 2000:  #Limitar memoria RAM
+    # Actualizamos contadores
+    total_muestras_procesadas += len(nuevas_medidas)
+    
+    if len(datos_z) > 2000:  
         datos_z = datos_z[-2000:]
-    return f"CPM:{int(round(cpm))},PROF:{prof_cm:.1f}" #respuesta a la esp32
-
+        
+    return f"CPM:{int(round(cpm))},PROF:{prof_cm:.1f}"
 
 @app.route("/descargar") #ruta par descargar el csv
 def descargar_csv():
