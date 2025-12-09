@@ -15,6 +15,7 @@ def _detect_time_column(df: pd.DataFrame) -> Tuple[pd.Series, str]:
     """Detecta la columna de tiempo en el DataFrame y la convierte a segundos desde el inicio de la sesión.
     """
     cols = {c.lower(): c for c in df.columns}
+    
     if "timestamp_s" in cols:
         s = pd.to_numeric(df[cols["timestamp_s"]], errors="coerce")
         if s.isna().any():
@@ -32,8 +33,7 @@ def _detect_time_column(df: pd.DataFrame) -> Tuple[pd.Series, str]:
     raise ValueError("No valid time column found. Provide either 'timestamp_s' or 'timestamp'/'time' in CSV.")
 
 def _require_cpm(df: pd.DataFrame) -> pd.Series:
-
-# Garantiza que exista una columna cpm (compresiones por minuto) y la devuelve como numérica.
+    # Garantiza que exista una columna cpm (compresiones por minuto) y la devuelve como numérica.
     cols = {c.lower(): c for c in df.columns}
     if "cpm" not in cols:
         raise ValueError("CSV must contain a 'cpm' column (compressions per minute).")
@@ -181,7 +181,7 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
     mask = ts_s - ts_s.iloc[0] >= 9.0
     ts_s = ts_s[mask].reset_index(drop=True)
     cpm = cpm[mask].reset_index(drop=True)
- # --- BLOQUE NUEVO: si el tiempo del CSV está roto, lo reconstruimos ---
+    # BLOQUE NUEVO: si el tiempo del CSV está roto, lo reconstruimos ---
     n = len(cpm)
     if n >= 2:
         dt = np.diff(ts_s.values.astype(float))
@@ -206,41 +206,60 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
     n = len(cpm)
     duration_s = float(ts_s.iloc[-1]) if n >= 2 else 0.0
     
-    #duration_s=n/100
-    # Time-weighted stats (preferred when sampling step not uniform)
+    cols = {c.lower(): c for c in df.columns}
+    col_no_rcp = cols.get("no_rcp") or cols.get("no_rcp_active")
+    
+    hands_off_time_s = 0.0
+    time_with_comp_s = 0.0
+
+    if col_no_rcp:
+        no_rcp_vals = pd.to_numeric(df[col_no_rcp], errors='coerce').fillna(0).astype(int)
+        no_rcp_subset = no_rcp_vals[mask].reset_index(drop=True) # Aplicar mismo recorte de 9s
+        no_rcp_subset = no_rcp_subset.iloc[order].reset_index(drop=True) # Aplicar mismo orden
+
+        if n >= 2:
+            dt_arr = np.diff(ts_s.values)
+            # flag en i indica estado durante intervalo i -> i+1
+            # (step-hold). Si no_rcp es 1, sumamos dt a hands-off
+            flags = no_rcp_subset.values[:-1]
+            hands_off_time_s = np.sum(dt_arr[flags == 1])
+            
+        time_with_comp_s = duration_s - hands_off_time_s
+
+    else:
+        if n >= 2:
+            for i in range(n-1):
+                dt = ts_s.iloc[i+1] - ts_s.iloc[i]
+                if dt > 0 and cpm.iloc[i] > 0:
+                    time_with_comp_s += dt
+        hands_off_time_s = duration_s - time_with_comp_s
+
+    # Fracción de compresión
+    compression_fraction_pct = 100.0 * time_with_comp_s / duration_s if duration_s > 0 else 0.0
+    # =========================================================
+
+    # Estadísticas básicas
     mean_cpm = _time_weighted_mean(ts_s.values, cpm)
     std_cpm = _time_weighted_std(ts_s.values, cpm)
-    # Median using sample values (not time-weighted) as a robust quick stat
     median_cpm = float(np.median(cpm.values)) if n > 0 else float("nan")
-
     in_target_pct = _time_weighted_percent(ts_s.values, cpm.values, 100.0, 120.0)
-    time_with_comp_s = 0.0
-    if n >= 2:
-        for i in range(n-1):
-            dt = ts_s.iloc[i+1] - ts_s.iloc[i] #me marca como si la frecuencia estuviera en 50 - no se porque por eso divido por dos
-            if dt > 0 and cpm.iloc[i] > 0:
-                time_with_comp_s += dt
-    compression_fraction_pct = 100.0 * time_with_comp_s / duration_s if duration_s > 0 else 0.0
-    hands_off_time_s = duration_s - time_with_comp_s if duration_s > 0 else 0.0
 
-    # Pauses (CPM == 0) longer than threshold
+    # Pauses (CPM == 0) > threshold
     long_pauses = _contiguous_zero_pauses(ts_s.values, cpm.values, min_pause_s=pause_threshold_s)
-    long_pauses_durations = [round(b-a, 3) for (a,b) in long_pauses]
-    # Top-k (3) by duration
     topk = sorted(long_pauses, key=lambda ab: (ab[1]-ab[0]), reverse=True)[:3]
     topk_list = [{"start_s": round(a - ts_s.iloc[0], 3), "end_s": round(b - ts_s.iloc[0], 3), "duration_s": round(b-a, 3)} for (a,b) in topk]
 
-    # Time to first compression (first CPM > 0)
+    # Time to first compression
     t_first_comp = _first_time_condition(ts_s.values, cpm.values, predicate=lambda v: v > 0)
 
-    # Sustained high rate > 130 CPM for >= 10 s
+    # Alarmas de Frecuencia
     high_rate_segs = _sustained_over_threshold(ts_s.values, cpm.values, thr=sustained_high_thr, min_duration_s=sustained_high_min_s)
     high_rate_list = [{"start_s": round(a - ts_s.iloc[0], 3), "end_s": round(b - ts_s.iloc[0], 3), "duration_s": round(b-a, 3)} for (a,b) in high_rate_segs]
     
+    # Métricas de Profundidad
     depth_block = None
-    depth_alarms= None
+    depth_alarms = None
     if depth_cm is not None and len(depth_cm) >= 2:
-        # Estadísticas (ponderadas por tiempo)
         mean_depth = _time_weighted_mean(ts_s.values, depth_cm.values)
         std_depth  = _time_weighted_std(ts_s.values, depth_cm.values)
         median_depth = float(np.median(depth_cm.values))
@@ -255,8 +274,7 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
                 "in_target_pct_5_6": in_5_6_pct,
                 "below_5_pct": below_5_pct,
                 "above_6_pct": above_6_pct,
-                        }
-
+        }
 
 
     # Alarma: profundidad sostenida < 4.5 cm por ≥ depth_alarm_min_s

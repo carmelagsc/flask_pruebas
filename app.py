@@ -28,7 +28,7 @@ comentario_actual = ""
 if not os.path.exists(archivo_csv):
     with open(archivo_csv, mode='w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm", "prof_cm"])
+        writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm", "prof_cm", "no_rcp"])
 
 @app.route("/")
 def mostrar_grafico():
@@ -53,7 +53,7 @@ def start():
   
     with open(archivo_csv, mode='w', newline='') as f:   # Reiniciar CSV 
         writer = csv.writer(f)
-        writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm", "prof_cm"])
+        writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm", "prof_cm", "no_rcp"])
     
     return "Guardado iniciado"
 
@@ -113,6 +113,7 @@ def recibir_datos():
         n_comp = m["n_comp"]
         cpm    = m["cpm"]
         prof_cm= m["depth_cm"]
+        no_rcp = 1 if m.get("no_rcp_active", False) else 0
         
     except Exception:
         n_comp, cpm, prof_cm = 0, 0.0, 0.0
@@ -124,7 +125,7 @@ def recibir_datos():
             for i, valor in enumerate(nuevas_medidas):
                 indice = start_index + i
                 timestamp_s = indice / fs_local
-                writer.writerow([indice, f"{timestamp_s:.2f}", valor, f"{cpm:.1f}", f"{prof_cm:.1f}"])
+                writer.writerow([indice, f"{timestamp_s:.2f}", valor, f"{cpm:.1f}", f"{prof_cm:.1f}", no_rcp])
 
     if len(datos_z) > 2000:  #Limitar memoria RAM
         datos_z = datos_z[-2000:]
@@ -141,7 +142,7 @@ def descargar_csv():
     datos_z = []
     with open(archivo_csv, mode='w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm", "prof_cm"])
+        writer.writerow(["indice", "timestamp_s", "Aceleración", "cpm", "prof_cm", "no_rcp"])
 
     return send_file(
         io.BytesIO(contenido.encode("utf-8")),
