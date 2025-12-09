@@ -12,10 +12,9 @@ from pathlib import Path
 # --------------------------
 
 def _detect_time_column(df: pd.DataFrame) -> Tuple[pd.Series, str]:
-    """Detecta la columna de tiempo en el DataFrame y la convierte a segundos desde el inicio de la sesión.
-    """
+    """Detecta la columna de tiempo en el DataFrame y la convierte a segundos desde el inicio de la sesión."""
     cols = {c.lower(): c for c in df.columns}
-    
+
     if "timestamp_s" in cols:
         s = pd.to_numeric(df[cols["timestamp_s"]], errors="coerce")
         if s.isna().any():
@@ -33,7 +32,7 @@ def _detect_time_column(df: pd.DataFrame) -> Tuple[pd.Series, str]:
     raise ValueError("No valid time column found. Provide either 'timestamp_s' or 'timestamp'/'time' in CSV.")
 
 def _require_cpm(df: pd.DataFrame) -> pd.Series:
-    # Garantiza que exista una columna cpm (compresiones por minuto) y la devuelve como numérica.
+    # Garantiza que exista una columna cpm y la devuelve como numérica.
     cols = {c.lower(): c for c in df.columns}
     if "cpm" not in cols:
         raise ValueError("CSV must contain a 'cpm' column (compressions per minute).")
@@ -42,7 +41,7 @@ def _require_cpm(df: pd.DataFrame) -> pd.Series:
         raise ValueError("Column 'cpm' contains non-numeric values.")
     return s.astype(float)
 
-def _require_depth_cm(df: pd.DataFrame) -> pd.Series | None:
+def _require_depth_cm(df: pd.DataFrame) -> Optional[pd.Series]:
     candidates = ["depth_cm", "profundidad", "profundidad_cm", "depth", "prof_cm"]
     cols = {c.lower(): c for c in df.columns}
     for k in candidates:
@@ -52,11 +51,6 @@ def _require_depth_cm(df: pd.DataFrame) -> pd.Series | None:
     return None
 
 def _segments_by_condition(times_s: np.ndarray, values: np.ndarray, predicate) -> List[Tuple[float, float]]:
-    """
-Construye segmentos de tiempo contiguos donde se cumple una condición
-booleana sobre el valor (por ejemplo: “CPM == 0” ó “CPM > 130”).
-Asume hold por tramos (cada muestra vale hasta la siguiente)..
-    """
     n = len(values)
     if n < 2:
         return []
@@ -76,13 +70,9 @@ Asume hold por tramos (cada muestra vale hasta la siguiente)..
             seg_start = None
     if in_seg:
         segs.append((seg_start, times_s[-1]))
-    return segs # Lista de tuplas (start_s, end_s) para cada tramo donde la condición se cumple.
+    return segs
 
 def _time_weighted_percent(times_s: np.ndarray, values: np.ndarray, lo: float, hi: float) -> float:
-    """
-    Calcula el porcentaje de tiempo en el que el valor estuvo dentro del rango [lo, hi], 
-    ponderando por la duración entre muestras (modelo “step-hold”: cada muestra vale hasta la próxima marca de tiempo).
-    """
     n = len(values)
     if n < 2:
         return 0.0
@@ -100,8 +90,6 @@ def _time_weighted_percent(times_s: np.ndarray, values: np.ndarray, lo: float, h
     return 100.0 * acc / total
 
 def _time_weighted_mean(times_s: np.ndarray, values) -> float:
-    """Media ponderada por tiempo (modelo step-hold).
-    Acepta pandas.Series o numpy.ndarray."""
     t = np.asarray(times_s, dtype=float)
     v = np.asarray(values,  dtype=float)
     n = v.shape[0]
@@ -118,8 +106,6 @@ def _time_weighted_mean(times_s: np.ndarray, values) -> float:
     return acc / total
 
 def _time_weighted_std(times_s: np.ndarray, values) -> float:
-    """Desvío estándar poblacional ponderado por tiempo (step-hold).
-    Acepta pandas.Series o numpy.ndarray."""
     t = np.asarray(times_s, dtype=float)
     v = np.asarray(values,  dtype=float)
     n = v.shape[0]
@@ -138,17 +124,12 @@ def _time_weighted_std(times_s: np.ndarray, values) -> float:
     var = var_acc / total
     return float(np.sqrt(var))
 
-
 def _contiguous_zero_pauses(times_s: np.ndarray, values: np.ndarray, min_pause_s: float) -> List[Tuple[float,float]]:
-    #Detecta pausas donde CPM == 0 de forma contigua y devuelve solo las que duran al menos min_pause_s (10s).
     segs = _segments_by_condition(times_s, values, predicate=lambda v: v == 0)
     long_segs = [(a,b) for (a,b) in segs if (b-a) >= min_pause_s]
     return long_segs
 
 def _first_time_condition(times_s: np.ndarray, values: np.ndarray, predicate) -> Optional[float]:
-    """ Encuentra el primer instante (en segundos relativos al inicio, es decir, t - t0) 
-    en el que se cumple una condición sobre el valor (ej.: “primera compresión” ⇒ CPM>0).
-    """
     n = len(values)
     if n < 2:
         return None
@@ -157,7 +138,7 @@ def _first_time_condition(times_s: np.ndarray, values: np.ndarray, predicate) ->
             return float(times_s[i] - times_s[0])
     return None
 
-def _sustained_over_threshold(times_s: np.ndarray, values: np.ndarray, thr: float, min_duration_s: float) -> List[Tuple[float,float]]: #""" Detecta segmentos donde el valor está estrictamente por encima de un umbral thr durante al menos min_duration_s. --> pq? En el script se usa para “frecuencia sostenida alta"""
+def _sustained_over_threshold(times_s: np.ndarray, values: np.ndarray, thr: float, min_duration_s: float) -> List[Tuple[float,float]]:
     segs = _segments_by_condition(times_s, values, predicate=lambda v: v > thr)
     long = [(a,b) for (a,b) in segs if (b-a) >= min_duration_s]
     return long
@@ -174,29 +155,30 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
                              depth_high_cm: float = 6.0,
                              depth_alarm_low_cm: float = 4.5,
                              depth_alarm_min_s: float = 10.0) -> Dict[str, Any]:
+    
+    # 1. Detectar Tiempo y Columnas Requeridas
     ts_s, detected_time_col = _detect_time_column(df)
     cpm = _require_cpm(df)
     depth_cm = _require_depth_cm(df) 
-    #ignorar los primeros 9s que no calcula todavia cpm
+    
+    # 2. Ignorar los primeros 9s (warm-up del filtro)
     mask = ts_s - ts_s.iloc[0] >= 9.0
     ts_s = ts_s[mask].reset_index(drop=True)
     cpm = cpm[mask].reset_index(drop=True)
-    # BLOQUE NUEVO: si el tiempo del CSV está roto, lo reconstruimos ---
+    
+    # 3. Reconstrucción de tiempo si está roto (Logic que ya tenías)
     n = len(cpm)
     if n >= 2:
         dt = np.diff(ts_s.values.astype(float))
         total_duration = float(ts_s.iloc[-1] - ts_s.iloc[0])
-
-        # Caso típico de tu CSV: dt=0 a partir de cierto punto, o duración casi nula
         if (dt <= 0).any() or total_duration <= 0:
-            fs_assumed = 100.0  # Hz: ajustar si tu fs real es otro
+            fs_assumed = 100.0  
             ts_s = pd.Series(np.arange(n, dtype=float) / fs_assumed)
     else:
-        # Con 0 ó 1 muestra, inventamos tiempo igual
         fs_assumed = 100.0
         ts_s = pd.Series(np.arange(n, dtype=float) / fs_assumed)
 
-    # Aseguramos que todo quede ordenado y alineado
+    # 4. ORDENAMIENTO (Crucial para alinear datos)
     order = np.argsort(ts_s.values)
     ts_s = ts_s.iloc[order].reset_index(drop=True)
     cpm = cpm.iloc[order].reset_index(drop=True)
@@ -205,15 +187,26 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
 
     n = len(cpm)
     duration_s = float(ts_s.iloc[-1]) if n >= 2 else 0.0
-    
+
+    # 5. CÁLCULO DE HANDS-OFF Y COMPRESSION FRACTION
+    # =========================================================
+    # DETECCIÓN DE COLUMNA 'no_rcp' (Nueva Lógica)
+    # =========================================================
     cols = {c.lower(): c for c in df.columns}
     col_no_rcp = cols.get("no_rcp") or cols.get("no_rcp_active")
     
     hands_off_time_s = 0.0
-    time_with_comp_s = 0.0
+    time_with_comp_s = 0.0 # Se usará para fallback o consistencia
 
     if col_no_rcp:
+        # --- CAMINO A: Usamos la bandera exacta del filtro ---
+        # Recuperamos la columna original, PERO debemos ordenarla igual que ts_s
         no_rcp_vals = pd.to_numeric(df[col_no_rcp], errors='coerce').fillna(0).astype(int)
+        # Aplicamos el filtro de >9s (usando el índice original 'mask' es complicado tras reset_index, 
+        # mejor re-filtrar o asumir alineación si el CSV viene limpio.
+        # Dado que hicimos cortes, lo más seguro es tomar los valores alineados por índice si no reordenamos el DF original.
+        # Simplificación: Asumimos que df, cpm y ts_s estaban alineados antes del sort.
+        # La forma robusta es:
         no_rcp_subset = no_rcp_vals[mask].reset_index(drop=True) # Aplicar mismo recorte de 9s
         no_rcp_subset = no_rcp_subset.iloc[order].reset_index(drop=True) # Aplicar mismo orden
 
@@ -227,13 +220,14 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
         time_with_comp_s = duration_s - hands_off_time_s
 
     else:
+        # --- CAMINO B: Fallback (Vieja lógica CPM > 0) ---
         if n >= 2:
             for i in range(n-1):
                 dt = ts_s.iloc[i+1] - ts_s.iloc[i]
                 if dt > 0 and cpm.iloc[i] > 0:
                     time_with_comp_s += dt
         hands_off_time_s = duration_s - time_with_comp_s
-
+    
     # Fracción de compresión
     compression_fraction_pct = 100.0 * time_with_comp_s / duration_s if duration_s > 0 else 0.0
     # =========================================================
@@ -276,11 +270,8 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
                 "above_6_pct": above_6_pct,
         }
 
-
-    # Alarma: profundidad sostenida < 4.5 cm por ≥ depth_alarm_min_s
-        shallow_segs = _segments_by_condition(
-            ts_s.values, depth_cm.values, predicate=lambda v: (v < depth_alarm_low_cm)
-        )
+        # Alarma Profundidad
+        shallow_segs = _segments_by_condition(ts_s.values, depth_cm.values, predicate=lambda v: (v < depth_alarm_low_cm))
         shallow_segs = [(a, b) for (a, b) in shallow_segs if (b - a) >= depth_alarm_min_s]
         if shallow_segs:
             depth_alarms = {
@@ -295,6 +286,7 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
                 }
             }
 
+    # Armado del Resultado
     results = {
             "session": {
                 "samples": int(n),
@@ -324,38 +316,36 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
                     "in_target_pct_5_6": round(depth_block["in_target_pct_5_6"], 3) if depth_block else None,
                     "below_5_pct": round(depth_block["below_5_pct"], 3) if depth_block else None,
                     "above_6_pct": round(depth_block["above_6_pct"], 3) if depth_block else None
-                },
-        
+                } if depth_block else None,
             
-            "alarms": {
-                "sustained_high_rate": {
-                    "threshold_cpm": sustained_high_thr,
-                    "min_duration_s": sustained_high_min_s,
-                    "segments": high_rate_list
+                "alarms": {
+                    "sustained_high_rate": {
+                        "threshold_cpm": sustained_high_thr,
+                        "min_duration_s": sustained_high_min_s,
+                        "segments": high_rate_list
+                    },
+                    "sustained_shallow_depth": {
+                        "threshold_cm": depth_alarms["sustained_shallow_depth"]["threshold_cm"] if depth_alarms else None,
+                        "min_duration_s": depth_alarms["sustained_shallow_depth"]["min_duration_s"] if depth_alarms else None,
+                        "segments": depth_alarms["sustained_shallow_depth"]["segments"] if depth_alarms else []
+                    } if depth_alarms else None,
                 },
-                "sustained_shallow_depth": {
-                    "threshold_cm": depth_alarms["sustained_shallow_depth"]["threshold_cm"] if depth_alarms else None,
-                    "min_duration_s": depth_alarms["sustained_shallow_depth"]["min_duration_s"] if depth_alarms else None,
-                    "segments": depth_alarms["sustained_shallow_depth"]["segments"] if depth_alarms else []
+
+                "not_computable_from_cpm_only": [
+                    *([] if depth_block is not None else ["depth_metrics"]),
+                    "recoil_complete_pct",
+                    "ventilation_rate_or_ratio",
+                    "time_to_first_shock"
+                ],
+
+                "reference_ranges_adult": {
+                    "rate_bpm_target": "100-120/min",
+                    "compression_fraction_target_pct": "> 60% (orientativo)",
+                    "depth_cm_target": "5-6 cm"
                 },
             },
-
-            "not_computable_from_cpm_only": [
-                # si no hay profundidad, la dejamos listada como no computable
-                *([] if depth_block is not None else ["depth_metrics"]),
-                "recoil_complete_pct",
-                "ventilation_rate_or_ratio",
-                "time_to_first_shock"
-            ],
-
-            "reference_ranges_adult": {
-                "rate_bpm_target": "100-120/min",
-                "compression_fraction_target_pct": "> 60% (orientativo)",
-                "depth_cm_target": "5-6 cm"
-            },
-        },
     }
-   
+    
     return results
 
 def _fmt(v, ndigits=1, suf=""):
@@ -369,11 +359,12 @@ def _fmt(v, ndigits=1, suf=""):
 
 def write_markdown_summary(results: Dict[str, Any]) -> str:
     s = results.get("session", {})
-    q = results.get("cpr_quality", {})
-    alarms = results.get("alarms", {})
+    q = results.get("cpr_quality", {}) or {}
+    # Helper seguro para extraer alarms
+    alarms = q.get("alarms", {}) or {} 
 
     rbpm = q.get("rate_bpm", {}) or {}
-    depth = q.get("depth_cm")  # puede ser dict o None
+    depth = q.get("depth_cm")  
 
     md = []
     md.append("# Resumen de calidad de RCP")
@@ -397,13 +388,13 @@ def write_markdown_summary(results: Dict[str, Any]) -> str:
         md.append(f"- Mediana: **{_fmt(depth.get('median_cm'), 2)}** cm")
         md.append(f"- Desvío: **{_fmt(depth.get('std_cm'), 2)}** cm")
         md.append(f"- % dentro de 5–6 cm: **{_fmt(depth.get('in_target_pct_5_6'), 1, '%')}**")
-        md.append(f"- % insuficiente (&lt; 5 cm): **{_fmt(depth.get('below_5_pct'), 1, '%')}**")
-        md.append(f"- % excesiva (&gt; 6 cm): **{_fmt(depth.get('above_6_pct'), 1, '%')}**")
+        md.append(f"- % insuficiente (< 5 cm): **{_fmt(depth.get('below_5_pct'), 1, '%')}**")
+        md.append(f"- % excesiva (> 6 cm): **{_fmt(depth.get('above_6_pct'), 1, '%')}**")
         md.append("")
 
     # Fractions & Pausas
     md.append("## Fracciones & Pausas")
-    md.append(f"- Compression Fraction: **{_fmt(q.get('compression_fraction_pct'), 1, '%')}** (objetivo &gt; 60%)")
+    md.append(f"- Compression Fraction: **{_fmt(q.get('compression_fraction_pct'), 1, '%')}** (objetivo > 60%)")
     md.append(f"- Hands-off total: **{_fmt(q.get('hands_off_time_s'), 1, ' s')}**")
     pauses = (q.get("pauses_over_threshold_s") or {})
     md.append(f"- Pausas ≥ {pauses.get('threshold_s', 'N/D')} s: **{pauses.get('count', 0)}**")
@@ -412,8 +403,8 @@ def write_markdown_summary(results: Dict[str, Any]) -> str:
         md.append("  - Top 3 pausas (inicio–fin, duración):")
         for p in top3:
             md.append(
-                f"    - { _fmt(p.get('start_s'),1,' s') }–{ _fmt(p.get('end_s'),1,' s') }, "
-                f"dur **{ _fmt(p.get('duration_s'),1,' s') }**"
+                f"    - {_fmt(p.get('start_s'),1,' s')}–{_fmt(p.get('end_s'),1,' s')}, "
+                f"dur **{_fmt(p.get('duration_s'),1,' s')}**"
             )
     md.append("")
 
@@ -430,32 +421,32 @@ def write_markdown_summary(results: Dict[str, Any]) -> str:
     segs = a_rate.get("segments") or []
     if segs:
         md.append(
-            f"- Frecuencia sostenida &gt; {a_rate.get('threshold_cpm','N/D')} cpm por ≥ "
+            f"- Frecuencia sostenida > {a_rate.get('threshold_cpm','N/D')} cpm por ≥ "
             f"{a_rate.get('min_duration_s','N/D')} s: **{len(segs)} segmentos**"
         )
         for seg in segs:
             md.append(
-                f"  - { _fmt(seg.get('start_s'),1,' s') }–{ _fmt(seg.get('end_s'),1,' s') }, "
-                f"dur **{ _fmt(seg.get('duration_s'),1,' s') }**"
+                f"  - {_fmt(seg.get('start_s'),1,' s')}–{_fmt(seg.get('end_s'),1,' s')}, "
+                f"dur **{_fmt(seg.get('duration_s'),1,' s')}**"
             )
     else:
         md.append("- Sin segmentos de frecuencia sostenida alta detectados.")
 
-    # Profundidad sostenida baja (opcional)
+    # Profundidad sostenida baja
     a_depth = alarms.get("sustained_shallow_depth")
     if isinstance(a_depth, dict) and a_depth.get("segments"):
         md.append(
-            f"- Profundidad sostenida &lt; {a_depth.get('threshold_cm','N/D')} cm por ≥ "
+            f"- Profundidad sostenida < {a_depth.get('threshold_cm','N/D')} cm por ≥ "
             f"{a_depth.get('min_duration_s','N/D')} s: **{len(a_depth['segments'])} segmentos**"
         )
         for seg in a_depth["segments"]:
             md.append(
-                f"  - { _fmt(seg.get('start_s'),1,' s') }–{ _fmt(seg.get('end_s'),1,' s') }, "
-                f"dur **{ _fmt(seg.get('duration_s'),1,' s') }**"
+                f"  - {_fmt(seg.get('start_s'),1,' s')}–{_fmt(seg.get('end_s'),1,' s')}, "
+                f"dur **{_fmt(seg.get('duration_s'),1,' s')}**"
             )
     md.append("")
 
-    # No calculable (si no hay profundidad, lo aclaramos)
+    # No calculable
     md.append("## No calculable con CPM solamente")
     extras = []
     if not isinstance(depth, dict):
