@@ -21,7 +21,7 @@ min_distance = int(fs * 0.40)                # ~133 cpm
 width_minmax = (int(0.04*fs), int(0.25*fs))  # 40–250 ms
 
 # "No RCP" (dispositivo quieto alrededor de g)
-G0 = 9.81
+G0 = -9.81
 G_TOL = 0.6                   # ±0.6 m/s^2
 QUIET_MIN_SAMPLES = 100       # >=100 muestras (~1 s)
 
