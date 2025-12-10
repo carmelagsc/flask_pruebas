@@ -156,17 +156,17 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
                              depth_alarm_low_cm: float = 4.5,
                              depth_alarm_min_s: float = 10.0) -> Dict[str, Any]:
     
-    # 1. Detectar Tiempo y Columnas Requeridas
+    # 1. Detectar Tiempo y Columnas
     ts_s, detected_time_col = _detect_time_column(df)
     cpm = _require_cpm(df)
     depth_cm = _require_depth_cm(df) 
     
-    # 2. Ignorar los primeros 9s (warm-up del filtro)
-    mask = ts_s - ts_s.iloc[0] >= 9.0
+    # 2. Ignorar los primeros 10s (warm-up)
+    mask = ts_s - ts_s.iloc[0] >= 10.0
     ts_s = ts_s[mask].reset_index(drop=True)
     cpm = cpm[mask].reset_index(drop=True)
     
-    # 3. Reconstrucción de tiempo si está roto (Logic que ya tenías)
+    # 3. Reconstrucción de tiempo si está roto
     n = len(cpm)
     if n >= 2:
         dt = np.diff(ts_s.values.astype(float))
@@ -178,7 +178,7 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
         fs_assumed = 100.0
         ts_s = pd.Series(np.arange(n, dtype=float) / fs_assumed)
 
-    # 4. ORDENAMIENTO (Crucial para alinear datos)
+    # 4. ORDENAMIENTO
     order = np.argsort(ts_s.values)
     ts_s = ts_s.iloc[order].reset_index(drop=True)
     cpm = cpm.iloc[order].reset_index(drop=True)
@@ -188,39 +188,25 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
     n = len(cpm)
     duration_s = float(ts_s.iloc[-1]) if n >= 2 else 0.0
 
-    # 5. CÁLCULO DE HANDS-OFF Y COMPRESSION FRACTION
-    # =========================================================
-    # DETECCIÓN DE COLUMNA 'no_rcp' (Nueva Lógica)
-    # =========================================================
+    # 5. CÁLCULO DE HANDS-OFF
     cols = {c.lower(): c for c in df.columns}
     col_no_rcp = cols.get("no_rcp") or cols.get("no_rcp_active")
     
     hands_off_time_s = 0.0
-    time_with_comp_s = 0.0 # Se usará para fallback o consistencia
+    time_with_comp_s = 0.0 
 
     if col_no_rcp:
-        # --- CAMINO A: Usamos la bandera exacta del filtro ---
-        # Recuperamos la columna original, PERO debemos ordenarla igual que ts_s
         no_rcp_vals = pd.to_numeric(df[col_no_rcp], errors='coerce').fillna(0).astype(int)
-        # Aplicamos el filtro de >9s (usando el índice original 'mask' es complicado tras reset_index, 
-        # mejor re-filtrar o asumir alineación si el CSV viene limpio.
-        # Dado que hicimos cortes, lo más seguro es tomar los valores alineados por índice si no reordenamos el DF original.
-        # Simplificación: Asumimos que df, cpm y ts_s estaban alineados antes del sort.
-        # La forma robusta es:
-        no_rcp_subset = no_rcp_vals[mask].reset_index(drop=True) # Aplicar mismo recorte de 9s
-        no_rcp_subset = no_rcp_subset.iloc[order].reset_index(drop=True) # Aplicar mismo orden
+        no_rcp_vals = no_rcp_vals[mask].reset_index(drop=True) 
+        no_rcp_vals = no_rcp_vals.iloc[order].reset_index(drop=True)
 
         if n >= 2:
             dt_arr = np.diff(ts_s.values)
-            # flag en i indica estado durante intervalo i -> i+1
-            # (step-hold). Si no_rcp es 1, sumamos dt a hands-off
-            flags = no_rcp_subset.values[:-1]
+            flags = no_rcp_vals.values[:-1]
             hands_off_time_s = np.sum(dt_arr[flags == 1])
             
         time_with_comp_s = duration_s - hands_off_time_s
-
     else:
-        # --- CAMINO B: Fallback (Vieja lógica CPM > 0) ---
         if n >= 2:
             for i in range(n-1):
                 dt = ts_s.iloc[i+1] - ts_s.iloc[i]
@@ -228,9 +214,7 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
                     time_with_comp_s += dt
         hands_off_time_s = duration_s - time_with_comp_s
     
-    # Fracción de compresión
     compression_fraction_pct = 100.0 * time_with_comp_s / duration_s if duration_s > 0 else 0.0
-    # =========================================================
 
     # Estadísticas básicas
     mean_cpm = _time_weighted_mean(ts_s.values, cpm)
@@ -238,21 +222,18 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
     median_cpm = float(np.median(cpm.values)) if n > 0 else float("nan")
     in_target_pct = _time_weighted_percent(ts_s.values, cpm.values, 100.0, 120.0)
 
-    # Pauses (CPM == 0) > threshold
     long_pauses = _contiguous_zero_pauses(ts_s.values, cpm.values, min_pause_s=pause_threshold_s)
     topk = sorted(long_pauses, key=lambda ab: (ab[1]-ab[0]), reverse=True)[:3]
     topk_list = [{"start_s": round(a - ts_s.iloc[0], 3), "end_s": round(b - ts_s.iloc[0], 3), "duration_s": round(b-a, 3)} for (a,b) in topk]
 
-    # Time to first compression
     t_first_comp = _first_time_condition(ts_s.values, cpm.values, predicate=lambda v: v > 0)
-
-    # Alarmas de Frecuencia
     high_rate_segs = _sustained_over_threshold(ts_s.values, cpm.values, thr=sustained_high_thr, min_duration_s=sustained_high_min_s)
     high_rate_list = [{"start_s": round(a - ts_s.iloc[0], 3), "end_s": round(b - ts_s.iloc[0], 3), "duration_s": round(b-a, 3)} for (a,b) in high_rate_segs]
     
-    # Métricas de Profundidad
+    # --- LOGICA DE PROFUNDIDAD CORREGIDA ---
     depth_block = None
-    depth_alarms = None
+    shallow_segments_list = [] # Siempre iniciamos la lista vacía
+    
     if depth_cm is not None and len(depth_cm) >= 2:
         mean_depth = _time_weighted_mean(ts_s.values, depth_cm.values)
         std_depth  = _time_weighted_std(ts_s.values, depth_cm.values)
@@ -261,6 +242,7 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
         in_5_6_pct = _time_weighted_percent(ts_s.values, depth_cm.values, depth_low_cm, depth_high_cm)
         below_5_pct = _time_weighted_percent(ts_s.values, depth_cm.values, -1e9, depth_low_cm - 1e-9)
         above_6_pct = _time_weighted_percent(ts_s.values, depth_cm.values, depth_high_cm + 1e-9, 1e9)
+        
         depth_block = {
                 "mean_cm": mean_depth,
                 "median_cm": median_depth,
@@ -270,21 +252,21 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
                 "above_6_pct": above_6_pct,
         }
 
-        # Alarma Profundidad
-        shallow_segs = _segments_by_condition(ts_s.values, depth_cm.values, predicate=lambda v: (v < depth_alarm_low_cm))
+        # Calculamos segmentos SIEMPRE que haya datos de profundidad
+        # Ignoramos valores < 0.5 cm (hands-off) para no generar falsa alarma
+        shallow_segs = _segments_by_condition(
+            ts_s.values, 
+            depth_cm.values, 
+            predicate=lambda v: (0.5 < v < depth_alarm_low_cm)
+        )
         shallow_segs = [(a, b) for (a, b) in shallow_segs if (b - a) >= depth_alarm_min_s]
-        if shallow_segs:
-            depth_alarms = {
-                "sustained_shallow_depth": {
-                    "threshold_cm": depth_alarm_low_cm,
-                    "min_duration_s": depth_alarm_min_s,
-                    "segments": [
-                        {"start_s": round(a - ts_s.iloc[0], 3),
-                         "end_s": round(b - ts_s.iloc[0], 3),
-                         "duration_s": round(b-a, 3)} for (a,b) in shallow_segs
-                    ]
-                }
-            }
+        
+        # Llenamos la lista (quedará vacía [] si no hubo alarmas, que es lo correcto)
+        shallow_segments_list = [
+            {"start_s": round(a - ts_s.iloc[0], 3),
+             "end_s": round(b - ts_s.iloc[0], 3),
+             "duration_s": round(b-a, 3)} for (a,b) in shallow_segs
+        ]
 
     # Armado del Resultado
     results = {
@@ -292,7 +274,6 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
                 "samples": int(n),
                 "time_column": detected_time_col,
                 "duration_s": round(duration_s, 3),
-                "sampling_note": "Assume step-hold between samples; time-weighted stats used."
             },
             "cpr_quality": {
                 "rate_bpm": {
@@ -325,10 +306,10 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
                         "segments": high_rate_list
                     },
                     "sustained_shallow_depth": {
-                        "threshold_cm": depth_alarms["sustained_shallow_depth"]["threshold_cm"] if depth_alarms else None,
-                        "min_duration_s": depth_alarms["sustained_shallow_depth"]["min_duration_s"] if depth_alarms else None,
-                        "segments": depth_alarms["sustained_shallow_depth"]["segments"] if depth_alarms else []
-                    } if depth_alarms else None,
+                        "threshold_cm": depth_alarm_low_cm,
+                        "min_duration_s": depth_alarm_min_s,
+                        "segments": shallow_segments_list # Ahora siempre es una lista (puede ser [])
+                    } if depth_block else None, # Solo es None si NO hay sensor de profundidad
                 },
 
                 "not_computable_from_cpm_only": [
@@ -337,7 +318,6 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
                     "ventilation_rate_or_ratio",
                     "time_to_first_shock"
                 ],
-
                 "reference_ranges_adult": {
                     "rate_bpm_target": "100-120/min",
                     "compression_fraction_target_pct": "> 60% (orientativo)",
@@ -345,7 +325,6 @@ def compute_metrics_from_cpm(df: pd.DataFrame,
                 },
             },
     }
-    
     return results
 
 def _fmt(v, ndigits=1, suf=""):
