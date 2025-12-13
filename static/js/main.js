@@ -4,7 +4,7 @@ const config = {
   data: { labels: [], datasets: [{ label:'Aceleración Z (m/s²)', data:[], borderColor:'#6b63bf', fill:false, tension:0.1 }] },
   options: {
     responsive:true, animation:false,
-    scales:{ y:{ min:-20,max:20, title:{display:true,text:'m/s²'} },
+    scales:{ y:{ min:-20,max:0, title:{display:true,text:'m/s²'} },
              x:{ min:0, max:1000, title:{display:true,text:'Índice de muestra'} } }
   }
 };
