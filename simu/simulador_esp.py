@@ -13,15 +13,15 @@ def load_series(csv_path, value_col=None, fs_fallback=100.0):
     """
     df = pd.read_csv(csv_path)
     # tiempo
-    if "timestamp_s" in df.columns:
-        t = df["timestamp_s"].astype(float).tolist()
+    if "tiempo_s" in df.columns:
+        t = df["tiempo_s"].astype(float).tolist()
     else:
         n = len(df)
         dt = 1.0 / fs_fallback
         t = [i * dt for i in range(n)]
 
     # valor
-    candidates = [value_col] if value_col else ["Aceleracion_Z", "Aceleración", "acc", "acc_z", "az"]
+    candidates = [value_col] if value_col else ["Aceleracion_Z", "Aceleración", "acc", "acc_z", "az", "aceleracion_z"]
     col = None
     for c in candidates:
         if c and c in df.columns:
@@ -29,7 +29,7 @@ def load_series(csv_path, value_col=None, fs_fallback=100.0):
             break
     if col is None:
         # si solo hay una o dos columnas, tomamos una que no sea timestamp_s
-        non_time_cols = [c for c in df.columns if c != "timestamp_s"]
+        non_time_cols = [c for c in df.columns if c != "tiempo_s"]
         if not non_time_cols:
             raise ValueError("No se encontró columna de valores.")
         col = non_time_cols[0]
