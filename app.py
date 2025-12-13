@@ -16,7 +16,7 @@ from io import BytesIO
 app = Flask(__name__)
 app.register_blueprint(stats_bp)
 
-FIXED_5CM_BASELINE = 7.5628 
+FIXED_5CM_BASELINE = 1.7104
 
 datos_z = []
 archivo_csv = "datos_CR.csv"
